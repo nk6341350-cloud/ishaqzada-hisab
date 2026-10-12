@@ -6,7 +6,7 @@ const num=x=>Number(x||0).toLocaleString('en-US',{maximumFractionDigits:2});
 const money=x=>num(x)+' AFN';
 const isoDate=()=>{let d=new Date;return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')};
 const psDay=s=>{const arr=['یکشنبه','دوشنبه','سې شنبه','چهارشنبه','پنجشنبه','جمعه','شنبه'];return arr[new Date(s+'T12:00:00').getDay()]||''};
-const uuid=()=>crypto.randomUUID?crypto.randomUUID():'id-'+Date.now()+'-'+Math.random().toString(36).slice(2);
+const uuid=()=>{try{if(typeof crypto!=='undefined'&&typeof crypto.randomUUID==='function')return crypto.randomUUID()}catch(e){}return 'id-'+Date.now()+'-'+Math.random().toString(36).slice(2)};
 let preparedBill=null;
 let db={people:[],products:[],transactions:[]};
 try{let raw=localStorage.getItem(STORAGE);if(!raw){for(let k of LEGACY){if(localStorage.getItem(k)){raw=localStorage.getItem(k);break}}}let v=JSON.parse(raw);if(Array.isArray(v.people)&&Array.isArray(v.transactions)){db={people:v.people,products:Array.isArray(v.products)?v.products:[],transactions:v.transactions}}}catch{}
@@ -33,7 +33,7 @@ $('hotspots').onclick=e=>{let btn=e.target.closest('button[data-page]');if(btn)o
 $('closeScreen').onclick=closePage;
 $('overlay').addEventListener('click',e=>{if(e.target===$('overlay'))closePage()});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('overlay').classList.contains('show'))closePage()});
-function renderHome(){let t=totals();$('homePayable').textContent=money(t.owed);$('homeReceivable').textContent=money(t.due);$('homeNet').textContent=money(t.net);let tx=db.transactions.slice(-4).reverse();$('activity').innerHTML=tx.length?tx.map(t=>{let p=findPerson(t.personId);let amount=tval(t);let sign=['payable','receive'].includes(t.kind)?'-':'+';return `<div class="entry"><button data-tx="${escapeHTML(t.id)}"><b>${escapeHTML(p?.name||'ناپېژندلی کس')}</b><small>${escapeHTML(t.item)} · ${escapeHTML(t.date)}</small></button><span class="sum ${sign==='-'?'negative':''}">${sign}${num(amount)} AFN</span></div>`}).join(''):'<div class="empty">تر اوسه معامله نه ده ثبت شوې — د پورته «نوی معامله» تڼۍ ووهه</div>'}
+function renderHome(){let t=totals();$('homePayable').textContent=money(t.owed);$('homeReceivable').textContent=money(t.due);$('homeNet').textContent=money(t.net);let tx=db.transactions.slice(-4).reverse();$('activity').innerHTML=tx.length?tx.map(t=>{let p=findPerson(t.personId);let amount=tval(t);let sign=['payable','receive'].includes(t.kind)?'-':'+';return `<div class="entry"><button data-tx="${escapeHTML(t.id)}"><b>${escapeHTML(p?.name||'ناپېژندلی کس')}</b><small>${escapeHTML(t.item)} · ${escapeHTML(t.date)}</small></button><span class="sum ${sign==='-'?'negative':''}">${sign}${num(amount)} AFN</span></div>`}).join(''):`<div class="empty"><div class="icon">🧾</div><b>تر اوسه معامله نه ده ثبت شوې</b><small>د پورته «نوی معامله» تڼۍ ووهه</small></div>`}
 $('activity').onclick=e=>{let b=e.target.closest('button[data-tx]');if(b){const t=db.transactions.find(t=>t.id===b.dataset.tx);if(t)openPage('personDetail',t.personId)}};
 const button=(label,page,cl='btn')=>`<button class="${cl}" type="button" data-nav="${page}">${label}</button>`;
 function openPage(page,param){preparedBill=null;if(page==='home'){closePage();return}let title={menu:'مېنو',settings:'تنظیمات او بیک‌اپ',products:'جنسونه',productForm:'نوی جنس',personForm:'نوی کس ثبت',people:'مشتریان او کسان',personDetail:'د کس حساب',transactionForm:'نوی معامله',history:'ټولې معاملې او تاریخچه',reports:'راپورونه',debts:'پور او طلب',receipts:'رسیدونه',receipt:'د حساب ښکلی رسید'}[page]||'اسحاقزاده فیشن شرکت';$('screenTitle').textContent=title;let body=({menu,settings,products,productForm,personForm,people,personDetail,transactionForm,history,reports,debts,receipts,receipt})[page]?.(param)||'';$('screenContent').innerHTML=body;$('overlay').classList.add('show');$('overlay').scrollTop=0;if(page==='transactionForm')updateTxForm();window.history.replaceState({page},'','#'+page)}
@@ -43,11 +43,17 @@ function validBackup(v){if(!v||!Array.isArray(v.people)||!Array.isArray(v.transa
 $('screenContent').addEventListener('change',async e=>{if(e.target.id!=='restoreFile')return;const f=e.target.files?.[0];if(!f)return;try{const v=JSON.parse(await f.text());if(!validBackup(v))throw Error('invalid backup');if(confirm('د فایل حسابونه به د اوسنیو حسابونو ځای ونیسي. دوام ورکوې؟')){backup();const next={people:v.people,products:v.products||[],transactions:v.transactions};if(commit(next)){renderHome();openPage('settings');alert('بیک‌اپ راوګرځېد؛ د مخکینیو حسابونو بیک‌اپ هم ډاونلوډ شو.')}}}catch{alert('فایل سم او بشپړ JSON بیک‌اپ نه دی. موجود حسابونه نه دي بدل شوي.')}});
 $('screenContent').addEventListener('submit',e=>{e.preventDefault();const form=e.target,v=Object.fromEntries(new FormData(form));
 if(form.id==='savePerson'){
- const name=v.name.trim();if(!name)return alert('نوم ولیکه');
- const duplicate=db.people.find(p=>p.id!==v.id&&p.name.trim().replace(/\s+/g,' ')===name.replace(/\s+/g,' '));
- if(duplicate){alert('دغه نوم له مخکې ثبت دی؛ د همدغه کس حساب خلاص شو.');openPage('personDetail',duplicate.id);return}
- const person={id:v.id||uuid(),name,phone:v.phone.trim(),address:v.address.trim()};
- if(commit({...db,people:v.id?db.people.map(p=>p.id===v.id?person:p):[...db.people,person]})){renderHome();openPage('personDetail',person.id)}return;
+ const name=String(v.name||'').trim();
+ if(!name){alert('مهرباني وکړه د کس نوم ولیکه.');return}
+ const originalId=String(v.id||'').trim();
+ const oldPerson=db.people.find(p=>p.id===originalId);
+ const normalized=name.replace(/\s+/g,' ').toLocaleLowerCase();
+ const duplicate=db.people.find(p=>p.id!==originalId&&String(p.name||'').trim().replace(/\s+/g,' ').toLocaleLowerCase()===normalized);
+ if(duplicate){alert('دا کس مخکې ثبت شوی؛ د هغه حساب به خلاص شي.');openPage('personDetail',duplicate.id);return}
+ const person={...oldPerson,id:oldPerson?.id||uuid(),name,phone:String(v.phone||'').trim(),address:String(v.address||'').trim()};
+ const nextPeople=oldPerson?db.people.map(p=>p.id===oldPerson.id?person:p):[...db.people,person];
+ if(commit({...db,people:nextPeople})){renderHome();openPage('personDetail',person.id)}
+ return;
 }
 if(form.id==='saveProduct'){
  const price=Number(v.price);if(!v.name.trim()||!Number.isFinite(price)||price<0)return alert('نوم او قیمت سم ولیکه');
